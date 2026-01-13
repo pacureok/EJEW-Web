@@ -1,18 +1,25 @@
 <!DOCTYPE html>
 <html>
 <head><title>EJEW Engine</title></head>
-<body style="background:#222; color:white; font-family:sans-serif; text-align:center;">
-  <h1>EJEW: Ejecutor de EXE en Web</h1>
-  <p>El motor C++ ya esta cargado en WebAssembly.</p>
-  <button id="btn_run" style="padding:15px 30px; font-size:18px; cursor:pointer;">INICIAR MOTOR EJEW</button>
-  
+<body style="background:#1a1a1a; color:#0f0; font-family:monospace; text-align:center; padding:50px;">
+  <h1>EJEW: Analizador de Binarios</h1>
+  <input type="file" id="archivo_exe" style="color:white; margin-bottom:20px;">
+  <br>
+  <button id="btn_analizar" style="padding:10px 20px; cursor:pointer;">ANALIZAR .EXE</button>
   <script src="ejew_wasm.js"></script>
   <script>
     Module.onRuntimeInitialized = () => {
-      document.getElementById("btn_run").onclick = () => {
-        // Llamamos a la funcion de tu motor C++
-        Module._iniciar_motor_ejew();
-        alert("¡EJEW activado! Revisa la consola (F12)");
+      document.getElementById("btn_analizar").onclick = async () => {
+        const fileInput = document.getElementById("archivo_exe");
+        if (fileInput.files.length === 0) return alert("Selecciona un archivo");
+        const file = fileInput.files[0];
+        const arrayBuffer = await file.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+        const bufferPtr = Module._malloc(uint8Array.length);
+        Module.HEAPU8.set(uint8Array, bufferPtr);
+        Module._analizar_exe(bufferPtr, uint8Array.length);
+        Module._free(bufferPtr);
+        console.log("Analisis terminado en el motor.");
       };
     };
   </script>
