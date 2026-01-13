@@ -618,7 +618,7 @@ function getBinarySync(file) {
   }
   // Throwing a plain string here, even though it not normally advisable since
   // this gets turning into an `abort` in instantiateArrayBuffer.
-  throw 'both async and sync fetching of the wasm failed';
+  throw 'sync fetching of the wasm failed: you can preload it to Module["wasmBinary"] manually, or emcc.py will do that for you when generating HTML (but not JS)';
 }
 
 async function getWasmBinary(binaryFile) {
@@ -637,47 +637,12 @@ async function getWasmBinary(binaryFile) {
   return getBinarySync(binaryFile);
 }
 
-async function instantiateArrayBuffer(binaryFile, imports) {
-  try {
-    var binary = await getWasmBinary(binaryFile);
-    var instance = await WebAssembly.instantiate(binary, imports);
-    return instance;
-  } catch (reason) {
-    err(`failed to asynchronously prepare wasm: ${reason}`);
-
-    // Warn on some common problems.
-    if (isFileURI(binaryFile)) {
-      err(`warning: Loading from a file URI (${binaryFile}) is not supported in most browsers. See https://emscripten.org/docs/getting_started/FAQ.html#how-do-i-run-a-local-webserver-for-testing-why-does-my-program-stall-in-downloading-or-preparing`);
-    }
-    abort(reason);
-  }
-}
-
-async function instantiateAsync(binary, binaryFile, imports) {
-  if (!binary
-      // Don't use streaming for file:// delivered objects in a webview, fetch them synchronously.
-      && !isFileURI(binaryFile)
-      // Avoid instantiateStreaming() on Node.js environment for now, as while
-      // Node.js v18.1.0 implements it, it does not have a full fetch()
-      // implementation yet.
-      //
-      // Reference:
-      //   https://github.com/emscripten-core/emscripten/pull/16917
-      && !ENVIRONMENT_IS_NODE
-     ) {
-    try {
-      var response = fetch(binaryFile, { credentials: 'same-origin' });
-      var instantiationResult = await WebAssembly.instantiateStreaming(response, imports);
-      return instantiationResult;
-    } catch (reason) {
-      // We expect the most common failure cause to be a bad MIME type for the binary,
-      // in which case falling back to ArrayBuffer instantiation should work.
-      err(`wasm streaming compile failed: ${reason}`);
-      err('falling back to ArrayBuffer instantiation');
-      // fall back of instantiateArrayBuffer below
-    };
-  }
-  return instantiateArrayBuffer(binaryFile, imports);
+function instantiateSync(file, info) {
+  var module;
+  var binary = getBinarySync(file);
+  module = new WebAssembly.Module(binary);
+  var instance = new WebAssembly.Instance(module, info);
+  return [instance, module];
 }
 
 function getWasmImports() {
@@ -691,7 +656,7 @@ function getWasmImports() {
 
 // Create the wasm instance.
 // Receives the wasm imports, returns the exports.
-async function createWasm() {
+function createWasm() {
   // Load the wasm module and create an instance of using native support in the JS engine.
   // handle a generated wasm instance, receiving its exports and
   // performing other necessary setup
@@ -703,25 +668,10 @@ async function createWasm() {
 
     updateMemoryViews();
 
-    removeRunDependency('wasm-instantiate');
     return wasmExports;
   }
-  addRunDependency('wasm-instantiate');
 
   // Prefer streaming instantiation if available.
-  // Async compilation can be confusing when an error on the page overwrites Module
-  // (for example, if the order of elements is wrong, and the one defining Module is
-  // later), so we save Module and check it later.
-  var trueModule = Module;
-  function receiveInstantiationResult(result) {
-    // 'result' is a ResultObject object which has both the module and instance.
-    // receiveInstance() will swap in the exports (to Module.asm) so they can be called
-    assert(Module === trueModule, 'the Module object should not be replaced during async compilation - perhaps the order of HTML elements is wrong?');
-    trueModule = null;
-    // TODO: Due to Closure regression https://github.com/google/closure-compiler/issues/3193, the above line no longer optimizes out down to the following line.
-    // When the regression is fixed, can restore the above PTHREADS-enabled path.
-    return receiveInstance(result['instance']);
-  }
 
   var info = getWasmImports();
 
@@ -745,9 +695,11 @@ async function createWasm() {
   }
 
   wasmBinaryFile ??= findWasmBinary();
-  var result = await instantiateAsync(wasmBinary, wasmBinaryFile, info);
-  var exports = receiveInstantiationResult(result);
-  return exports;
+  var result = instantiateSync(wasmBinaryFile, info);
+  // TODO: Due to Closure regression https://github.com/google/closure-compiler/issues/3193,
+  // the above line no longer optimizes out down to the following line.
+  // When the regression is fixed, we can remove this if/else.
+  return receiveInstance(result[0]);
 }
 
 // end include: preamble.js
@@ -774,71 +726,6 @@ async function createWasm() {
 
   var onPreRuns = [];
   var addOnPreRun = (cb) => onPreRuns.push(cb);
-
-  var runDependencies = 0;
-  
-  
-  var dependenciesFulfilled = null;
-  
-  var runDependencyTracking = {
-  };
-  
-  var runDependencyWatcher = null;
-  var removeRunDependency = (id) => {
-      runDependencies--;
-  
-      Module['monitorRunDependencies']?.(runDependencies);
-  
-      assert(id, 'removeRunDependency requires an ID');
-      assert(runDependencyTracking[id]);
-      delete runDependencyTracking[id];
-      if (runDependencies == 0) {
-        if (runDependencyWatcher !== null) {
-          clearInterval(runDependencyWatcher);
-          runDependencyWatcher = null;
-        }
-        if (dependenciesFulfilled) {
-          var callback = dependenciesFulfilled;
-          dependenciesFulfilled = null;
-          callback(); // can add another dependenciesFulfilled
-        }
-      }
-    };
-  
-  
-  var addRunDependency = (id) => {
-      runDependencies++;
-  
-      Module['monitorRunDependencies']?.(runDependencies);
-  
-      assert(id, 'addRunDependency requires an ID')
-      assert(!runDependencyTracking[id]);
-      runDependencyTracking[id] = 1;
-      if (runDependencyWatcher === null && globalThis.setInterval) {
-        // Check for missing dependencies every few seconds
-        runDependencyWatcher = setInterval(() => {
-          if (ABORT) {
-            clearInterval(runDependencyWatcher);
-            runDependencyWatcher = null;
-            return;
-          }
-          var shown = false;
-          for (var dep in runDependencyTracking) {
-            if (!shown) {
-              shown = true;
-              err('still waiting on run dependencies:');
-            }
-            err(`dependency: ${dep}`);
-          }
-          if (shown) {
-            err('(end of list)');
-          }
-        }, 10000);
-        // Prevent this timer from keeping the runtime alive if nothing
-        // else is.
-        runDependencyWatcher.unref?.()
-      }
-    };
 
 
   
@@ -869,7 +756,6 @@ async function createWasm() {
       ptr >>>= 0;
       return '0x' + ptr.toString(16).padStart(8, '0');
     };
-
 
   
     /**
@@ -909,6 +795,48 @@ async function createWasm() {
 
   var __abort_js = () =>
       abort('native code called abort()');
+
+  var readEmAsmArgsArray = [];
+  var readEmAsmArgs = (sigPtr, buf) => {
+      // Nobody should have mutated _readEmAsmArgsArray underneath us to be something else than an array.
+      assert(Array.isArray(readEmAsmArgsArray));
+      // The input buffer is allocated on the stack, so it must be stack-aligned.
+      assert(buf % 16 == 0);
+      readEmAsmArgsArray.length = 0;
+      var ch;
+      // Most arguments are i32s, so shift the buffer pointer so it is a plain
+      // index into HEAP32.
+      while (ch = HEAPU8[sigPtr++]) {
+        var chr = String.fromCharCode(ch);
+        var validChars = ['d', 'f', 'i', 'p'];
+        // In WASM_BIGINT mode we support passing i64 values as bigint.
+        validChars.push('j');
+        assert(validChars.includes(chr), `Invalid character ${ch}("${chr}") in readEmAsmArgs! Use only [${validChars}], and do not specify "v" for void return argument.`);
+        // Floats are always passed as doubles, so all types except for 'i'
+        // are 8 bytes and require alignment.
+        var wide = (ch != 105);
+        wide &= (ch != 112);
+        buf += wide && (buf % 8) ? 4 : 0;
+        readEmAsmArgsArray.push(
+          // Special case for pointers under wasm64 or CAN_ADDRESS_2GB mode.
+          ch == 112 ? HEAPU32[((buf)>>2)] :
+          ch == 106 ? HEAP64[((buf)>>3)] :
+          ch == 105 ?
+            HEAP32[((buf)>>2)] :
+            HEAPF64[((buf)>>3)]
+        );
+        buf += wide ? 8 : 4;
+      }
+      return readEmAsmArgsArray;
+    };
+  var runEmAsmFunction = (code, sigPtr, argbuf) => {
+      var args = readEmAsmArgs(sigPtr, argbuf);
+      assert(ASM_CONSTS.hasOwnProperty(code), `No EM_ASM constant found at address ${code}.  The loaded WebAssembly file is likely out of sync with the generated JavaScript.`);
+      return ASM_CONSTS[code](...args);
+    };
+  var _emscripten_asm_const_int = (code, sigPtr, argbuf) => {
+      return runEmAsmFunction(code, sigPtr, argbuf);
+    };
 
   var getHeapMax = () =>
       // Stay one Wasm page short of 4GB: while e.g. Chrome is able to allocate
@@ -1369,7 +1297,7 @@ Module['FS_createPreloadedFile'] = FS.createPreloadedFile;
   'inetNtop6',
   'readSockaddr',
   'writeSockaddr',
-  'readEmAsmArgs',
+  'runMainThreadEmAsm',
   'jstoi_q',
   'getExecutableName',
   'autoResumeAudioContext',
@@ -1386,6 +1314,8 @@ Module['FS_createPreloadedFile'] = FS.createPreloadedFile;
   'mmapAlloc',
   'HandleAllocator',
   'getUniqueRunDependency',
+  'addRunDependency',
+  'removeRunDependency',
   'addOnInit',
   'addOnPostCtor',
   'addOnPreMain',
@@ -1556,12 +1486,12 @@ missingLibrarySymbols.forEach(missingLibrarySymbol)
   'timers',
   'warnOnce',
   'readEmAsmArgsArray',
+  'readEmAsmArgs',
+  'runEmAsmFunction',
   'alignMemory',
   'wasmTable',
   'wasmMemory',
   'noExitRuntime',
-  'addRunDependency',
-  'removeRunDependency',
   'addOnPreRun',
   'addOnPostRun',
   'freeTableIndexes',
@@ -1756,9 +1686,14 @@ unexportedSymbols.forEach(unexportedRuntimeSymbol);
 function checkIncomingModuleAPI() {
   ignoredModuleProp('fetchSettings');
 }
+var ASM_CONSTS = {
+  68788: () => { window.postMessage({ type: "EJEW_GPU_INIT" }, "*"); },  
+ 68844: ($0, $1) => { var canvas = document.getElementById("ejew_canvas"); if (!canvas) { canvas = document.createElement("canvas"); canvas.id = "ejew_canvas"; canvas.width = $0; canvas.height = $1; canvas.style.border = "2px solid #58a6ff"; canvas.style.backgroundColor = "black"; canvas.style.boxShadow = "0 0 20px #000"; var area = document.getElementById("window-area"); if (area) area.appendChild(canvas); else document.body.appendChild(canvas); } console.log("EJEW Renderer: Canvas WebGL inicializado."); }
+};
 
 // Imports from the Wasm binary.
 var _analizar_recurso = Module['_analizar_recurso'] = makeInvalidEarlyAccess('_analizar_recurso');
+var _iniciar_canvas_webgl = Module['_iniciar_canvas_webgl'] = makeInvalidEarlyAccess('_iniciar_canvas_webgl');
 var _fflush = makeInvalidEarlyAccess('_fflush');
 var _strerror = makeInvalidEarlyAccess('_strerror');
 var _emscripten_stack_get_end = makeInvalidEarlyAccess('_emscripten_stack_get_end');
@@ -1776,6 +1711,7 @@ var wasmMemory = makeInvalidEarlyAccess('wasmMemory');
 
 function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['analizar_recurso'] != 'undefined', 'missing Wasm export: analizar_recurso');
+  assert(typeof wasmExports['iniciar_canvas_webgl'] != 'undefined', 'missing Wasm export: iniciar_canvas_webgl');
   assert(typeof wasmExports['fflush'] != 'undefined', 'missing Wasm export: fflush');
   assert(typeof wasmExports['strerror'] != 'undefined', 'missing Wasm export: strerror');
   assert(typeof wasmExports['emscripten_stack_get_end'] != 'undefined', 'missing Wasm export: emscripten_stack_get_end');
@@ -1790,6 +1726,7 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['memory'] != 'undefined', 'missing Wasm export: memory');
   assert(typeof wasmExports['__indirect_function_table'] != 'undefined', 'missing Wasm export: __indirect_function_table');
   _analizar_recurso = Module['_analizar_recurso'] = createExportWrapper('analizar_recurso', 3);
+  _iniciar_canvas_webgl = Module['_iniciar_canvas_webgl'] = createExportWrapper('iniciar_canvas_webgl', 2);
   _fflush = createExportWrapper('fflush', 1);
   _strerror = createExportWrapper('strerror', 1);
   _emscripten_stack_get_end = wasmExports['emscripten_stack_get_end'];
@@ -1808,6 +1745,8 @@ function assignWasmExports(wasmExports) {
 var wasmImports = {
   /** @export */
   _abort_js: __abort_js,
+  /** @export */
+  emscripten_asm_const_int: _emscripten_asm_const_int,
   /** @export */
   emscripten_resize_heap: _emscripten_resize_heap,
   /** @export */
@@ -1835,20 +1774,9 @@ function stackCheckInit() {
 
 function run() {
 
-  if (runDependencies > 0) {
-    dependenciesFulfilled = run;
-    return;
-  }
-
   stackCheckInit();
 
   preRun();
-
-  // a preRun added a dependency, run will be called later
-  if (runDependencies > 0) {
-    dependenciesFulfilled = run;
-    return;
-  }
 
   function doRun() {
     // run may have just been called through dependencies being fulfilled just in this very frame,
@@ -1913,9 +1841,7 @@ function checkUnflushedContent() {
 
 var wasmExports;
 
-// With async instantation wasmExports is assigned asynchronously when the
-// instance is received.
-createWasm();
+wasmExports = createWasm();
 
 run();
 
