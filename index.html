@@ -6,63 +6,19 @@ cat << 'EOF' > ~/EJEW_Project/public/index.html
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EJEW Engine - Windows 98 Edition</title>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background: #008080 url('assets/clouds.jpg') no-repeat center center fixed;
-            background-size: cover;
-            font-family: 'Tahoma', sans-serif;
-            overflow: hidden;
-            color: black;
-        }
-        #canvas {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background-color: black;
-            border: 3px solid #dfdfdf;
-            border-right-color: #000;
-            border-bottom-color: #000;
-            display: none; 
-        }
-        #loading-screen {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: #c0c0c0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-        }
-        .win-progress {
-            width: 300px;
-            height: 20px;
-            border: 2px solid #808080;
-            background: white;
-            margin-top: 20px;
-        }
-        #bar {
-            width: 0%;
-            height: 100%;
-            background: #000080;
-            transition: width 0.2s;
-        }
-        .win-logo {
-            margin-bottom: 20px;
-            image-rendering: pixelated;
-        }
+        body { margin: 0; background: #008080 url('assets/clouds.jpg') no-repeat center; background-size: cover; font-family: 'Tahoma', sans-serif; overflow: hidden; }
+        #canvas { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); border: 3px solid #dfdfdf; border-right-color: #000; border-bottom-color: #000; display: none; background: black; }
+        #loading-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #c0c0c0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
+        .win-progress { width: 300px; height: 20px; border: 2px solid #808080; background: white; margin-top: 20px; }
+        #bar { width: 0%; height: 100%; background: #000080; }
     </style>
 </head>
 <body>
 
 <div id="loading-screen">
-    <img src="assets/windows-0.png" class="win-logo" width="150" alt="Logo">
+    <img src="assets/windows-0.png" width="150" style="image-rendering: pixelated;">
     <p>Iniciando EJEW Engine...</p>
-    <div class="win-progress">
-        <div id="bar"></div>
-    </div>
+    <div class="win-progress"><div id="bar"></div></div>
 </div>
 
 <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
@@ -72,36 +28,32 @@ cat << 'EOF' > ~/EJEW_Project/public/index.html
         preRun: [],
         postRun: [],
         print: function(text) { console.log(text); },
-        canvas: (function() {
-            var canvas = document.getElementById('canvas');
-            return canvas;
-        })(),
+        canvas: document.getElementById('canvas'),
         setStatus: function(text) {
-            console.log("Status: " + text);
             if (!text) {
                 document.getElementById('loading-screen').style.display = 'none';
                 document.getElementById('canvas').style.display = 'block';
             }
         },
         monitorRunDependencies: function(left) {
-            var total = 100; 
-            var current = Math.max(0, total - left);
-            var percent = (current / total) * 100;
+            var total = 100;
+            var percent = Math.min(100, ((total - left) / total) * 100);
             document.getElementById('bar').style.width = percent + '%';
-        },
-        // ESTO SOLUCIONA EL ERROR "UNCaught SYNC FETCHING"
-        instantiateWasm: function(imports, successCallback) {
-            fetch('ejew_wasm.wasm')
-                .then(response => response.arrayBuffer())
-                .then(binary => WebAssembly.instantiate(binary, imports))
-                .then(result => successCallback(result.instance))
-                .catch(err => console.error("Error cargando WASM asíncronamente:", err));
-            return {}; 
         }
     };
-</script>
 
-<script async src="ejew_wasm.js"></script>
+    // SOLUCIÓN AL ERROR DE STACK_INIT:
+    // Cargamos el binario primero y luego arrancamos el script
+    fetch('ejew_wasm.wasm')
+        .then(response => response.arrayBuffer())
+        .then(buffer => {
+            Module.wasmBinary = buffer; // Inyectamos el binario directamente
+            var script = document.createElement('script');
+            script.src = "ejew_wasm.js";
+            document.body.appendChild(script);
+        })
+        .catch(err => console.error("Error crítico de carga:", err));
+</script>
 
 </body>
 </html>
