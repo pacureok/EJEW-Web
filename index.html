@@ -1,86 +1,73 @@
 cat << 'EOF' > index.html
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-  <title>EJEW OS - Windows Environment</title>
-  <style>
-    body { margin: 0; overflow: hidden; background: #008080; color: #fff; font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; }
-    #desktop { flex-grow: 1; position: relative; padding: 20px; }
-    #taskbar { background: #c0c0c0; border-top: 2px solid #fff; height: 40px; display: flex; align-items: center; padding: 0 10px; color: #000; z-index: 100; }
-    #start-btn { font-weight: bold; background: #c0c0c0; border: 2px solid; border-color: #fff #808080 #808080 #fff; padding: 2px 10px; cursor: pointer; margin-right: 10px; }
-    #window-area { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; pointer-events: none; }
-    #file-explorer { position: relative; background: #c0c0c0; border: 2px solid; border-color: #fff #808080 #808080 #fff; padding: 20px; color: #000; width: 400px; pointer-events: all; }
-    #progress-container { width: 100%; background: #808080; height: 20px; margin-top: 10px; border: 1px solid #fff; }
-    #progress-bar { width: 0%; height: 100%; background: #000080; transition: width 0.1s; }
-    #log-area { background: #000; color: #0f0; font-family: monospace; font-size: 11px; height: 80px; overflow-y: auto; margin-top: 10px; padding: 5px; }
-    canvas { pointer-events: all; }
-  </style>
+    <meta charset="UTF-8">
+    <title>EJEW OS - Web Service Edition</title>
+    <style>
+        :root {
+            --win-blue: #000080;
+            --win-gray: #c0c0c0;
+            --win-border-light: #fff;
+            --win-border-dark: #808080;
+        }
+        body { margin: 0; overflow: hidden; background: #008080; font-family: 'Tahoma', sans-serif; height: 100vh; display: flex; flex-direction: column; }
+        #desktop { flex-grow: 1; position: relative; background-image: url('https://win98icons.alexmeub.com/images/clouds.jpg'); background-size: cover; }
+        .window { position: absolute; background: var(--win-gray); border: 2px solid; border-color: var(--win-border-light) var(--win-border-dark) var(--win-border-dark) var(--win-border-light); box-shadow: 2px 2px 10px rgba(0,0,0,0.5); min-width: 350px; z-index: 10; }
+        .title-bar { background: linear-gradient(90deg, var(--win-blue), #1084d0); color: white; padding: 3px 5px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 13px; }
+        .window-body { padding: 15px; color: black; }
+        #taskbar { background: var(--win-gray); border-top: 2px solid var(--win-border-light); height: 38px; display: flex; align-items: center; padding: 0 5px; z-index: 100; gap: 10px; }
+        #start-btn { font-weight: bold; background: var(--win-gray); border: 2px solid; border-color: var(--win-border-light) var(--win-border-dark) var(--win-border-dark) var(--win-border-light); padding: 2px 10px; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+        #progress-container { width: 100%; height: 25px; background: #eee; border: 2px inset var(--win-border-light); margin: 15px 0; position: relative; overflow: hidden; }
+        #progress-bar { width: 0%; height: 100%; background: #008000; transition: width 0.1s linear; }
+        #progress-text { position: absolute; width: 100%; text-align: center; top: 4px; font-size: 11px; color: #000; font-weight: bold; }
+        #game-window { display: none; width: 640px; top: 40px; left: 50%; transform: translateX(-50%); }
+        canvas { background: black; width: 100%; height: 480px; display: block; image-rendering: pixelated; }
+        #log-area { background: #fff; border: 2px inset var(--win-border-light); height: 100px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 11px; padding: 5px; margin-top: 10px; }
+    </style>
 </head>
 <body>
-  <div id="desktop">
-    <div id="window-area">
-      <div id="file-explorer">
-        <div style="background:#000080; color:#fff; padding:2px 5px; margin:-20px -20px 15px -20px; font-weight:bold;">EJEW - File Explorer</div>
-        <p>Seleccionar carpeta del juego o .exe:</p>
-        <input type="file" id="input_folder" webkitdirectory directory multiple>
-        <button id="btn_run" style="margin-top:10px; width:100%;">Cargar en EJEW</button>
-        <div id="progress-container"><div id="progress-bar"></div></div>
-        <div id="log-area"></div>
-      </div>
+<div id="desktop">
+    <div id="explorer" class="window" style="top: 50px; left: 50px;">
+        <div class="title-bar"><span>EJEW Explorer - C:\Games</span><button>X</button></div>
+        <div class="window-body">
+            <input type="file" id="input_folder" webkitdirectory directory multiple style="width:100%;">
+            <button id="btn_run" style="width:100%; margin-top:10px; height:35px; font-weight:bold;">EJECUTAR JUEGO</button>
+            <div id="progress-container"><div id="progress-bar"></div><div id="progress-text">0% - Listo</div></div>
+            <div id="log-area">Iniciando sistema...</div>
+        </div>
     </div>
-  </div>
-  <div id="taskbar">
-    <div id="start-btn">Start</div>
-    <div id="status-text" style="font-size:12px; margin-left:10px;">Sistema EJEW listo.</div>
-  </div>
-
-  <script src="ejew_wasm.js"></script>
-  <script>
-    const logger = (msg) => {
-        const div = document.getElementById("log-area");
-        div.innerHTML += `> ${msg}<br>`;
-        div.scrollTop = div.scrollHeight;
-    };
-
-    window.addEventListener("message", (e) => {
-        if (e.data.type === "EJEW_GPU_INIT") {
-            logger("GPU: Iniciando WebGL Renderer...");
-            Module._iniciar_canvas_webgl(800, 600);
-        }
-    });
-
+    <div id="game-window" class="window">
+        <div class="title-bar"><span>EJEW GPU - OpenGL Render</span><button onclick="this.parentElement.parentElement.style.display='none'">X</button></div>
+        <div class="window-body" style="padding:0;"><div id="canvas-container"></div></div>
+    </div>
+</div>
+<div id="taskbar"><div id="start-btn"><img src="https://win98icons.alexmeub.com/icons/png/windows-0.png" width="16">Start</div><div id="status-bar">EJEW Kernel v0.5a Online</div></div>
+<script src="ejew_wasm.js"></script>
+<script>
+    const logger = (msg) => { document.getElementById("log-area").innerHTML = `> ${msg}<br>` + document.getElementById("log-area").innerHTML; };
+    window.addEventListener("message", (e) => { if (e.data.type === "EJEW_GPU_INIT") { document.getElementById("game-window").style.display = "block"; Module._iniciar_canvas_webgl(640, 480); }});
     Module.onRuntimeInitialized = () => {
-      logger("Kernel EJEW: OK");
-      document.getElementById("btn_run").onclick = async () => {
-        const files = document.getElementById("input_folder").files;
-        if (files.length === 0) return;
-
-        let loaded = 0;
-        const total = files.length;
-        document.getElementById("status-text").innerText = "Procesando archivos...";
-
-        for (const file of files) {
-          const buffer = await file.arrayBuffer();
-          const uint8 = new Uint8Array(buffer);
-          
-          const namePtr = Module._malloc(file.name.length + 1);
-          Module.writeAsciiToMemory(file.name, namePtr);
-          const dataPtr = Module._malloc(uint8.length);
-          Module.HEAPU8.set(uint8, dataPtr);
-
-          Module._analizar_recurso(namePtr, dataPtr, uint8.length);
-
-          Module._free(namePtr);
-          Module._free(dataPtr);
-
-          loaded++;
-          document.getElementById("progress-bar").style.width = (loaded/total*100) + "%";
-        }
-        document.getElementById("status-text").innerText = "Sincronización completa.";
-        logger("FS: Sincronizado.");
-      };
+        logger("SYSTEM: WebAssembly mapeado.");
+        document.getElementById("btn_run").onclick = async () => {
+            const files = document.getElementById("input_folder").files;
+            if (!files.length) return;
+            let loaded = 0; const total = files.length;
+            for (const file of files) {
+                const buffer = await file.arrayBuffer(); const uint8 = new Uint8Array(buffer);
+                const namePtr = Module._malloc(file.name.length + 1); Module.writeAsciiToMemory(file.name, namePtr);
+                const dataPtr = Module._malloc(uint8.length); Module.HEAPU8.set(uint8, dataPtr);
+                Module._analizar_recurso(namePtr, dataPtr, uint8.length);
+                Module._free(namePtr); Module._free(dataPtr);
+                loaded++; const pct = Math.round((loaded/total)*100);
+                document.getElementById("progress-bar").style.width = pct + "%";
+                document.getElementById("progress-text").innerText = `${pct}% - ${file.name.substring(0,10)}`;
+                if (loaded % 5 === 0) await new Promise(r => setTimeout(r, 0));
+            }
+            logger("FS: Sincronizado.");
+        };
     };
-  </script>
+</script>
 </body>
 </html>
 EOF
