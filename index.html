@@ -1,25 +1,53 @@
 <!DOCTYPE html>
 <html>
-<head><title>EJEW Engine</title></head>
-<body style="background:#1a1a1a; color:#0f0; font-family:monospace; text-align:center; padding:50px;">
-  <h1>EJEW: Analizador de Binarios</h1>
-  <input type="file" id="archivo_exe" style="color:white; margin-bottom:20px;">
-  <br>
-  <button id="btn_analizar" style="padding:10px 20px; cursor:pointer;">ANALIZAR .EXE</button>
+<head><title>EJEW Web Engine</title></head>
+<body style="background:#0d1117; color:#58a6ff; font-family:sans-serif; text-align:center; padding:20px;">
+  <h1>EJEW: Engine Environment</h1>
+  
+  <div style="border:2px dashed #30363d; padding:30px; border-radius:10px;">
+    <h3>Cargar Proyecto de Juego</h3>
+    <p>Selecciona la carpeta del juego o solo el .exe</p>
+    <input type="file" id="input_folder" webkitdirectory mozdirectory directory multiple style="color:white; margin:10px;">
+    <br>
+    <button id="btn_run" style="background:#238636; color:white; border:none; padding:15px 30px; border-radius:5px; cursor:pointer; font-weight:bold;">MONTAR EN EJEW</button>
+  </div>
+
+  <div id="log" style="margin-top:20px; text-align:left; background:#161b22; padding:15px; height:200px; overflow-y:auto; font-family:monospace; font-size:12px; border:1px solid #30363d;"></div>
+
   <script src="ejew_wasm.js"></script>
   <script>
+    const logger = (msg) => {
+        const div = document.getElementById("log");
+        div.innerHTML += `> ${msg}<br>`;
+        div.scrollTop = div.scrollHeight;
+    };
+
     Module.onRuntimeInitialized = () => {
-      document.getElementById("btn_analizar").onclick = async () => {
-        const fileInput = document.getElementById("archivo_exe");
-        if (fileInput.files.length === 0) return alert("Selecciona un archivo");
-        const file = fileInput.files[0];
-        const arrayBuffer = await file.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-        const bufferPtr = Module._malloc(uint8Array.length);
-        Module.HEAPU8.set(uint8Array, bufferPtr);
-        Module._analizar_exe(bufferPtr, uint8Array.length);
-        Module._free(bufferPtr);
-        console.log("Analisis terminado en el motor.");
+      logger("Motor WebAssembly Cargado.");
+      
+      document.getElementById("btn_run").onclick = async () => {
+        const files = document.getElementById("input_folder").files;
+        if (files.length === 0) return alert("Selecciona algo primero");
+
+        logger(`Montando ${files.length} archivos...`);
+
+        for (const file of files) {
+          const buffer = await file.arrayBuffer();
+          const uint8 = new Uint8Array(buffer);
+          
+          // Pasar nombre y datos al C++
+          const namePtr = Module._malloc(file.name.length + 1);
+          Module.writeAsciiToMemory(file.name, namePtr);
+          
+          const dataPtr = Module._malloc(uint8.length);
+          Module.HEAPU8.set(uint8, dataPtr);
+
+          Module._analizar_recurso(namePtr, dataPtr, uint8.length);
+
+          Module._free(namePtr);
+          Module._free(dataPtr);
+        }
+        logger("Sistema de archivos EJEW sincronizado.");
       };
     };
   </script>

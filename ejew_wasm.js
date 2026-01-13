@@ -1282,6 +1282,16 @@ async function createWasm() {
   var cwrap = (ident, returnType, argTypes, opts) => {
       return (...args) => ccall(ident, returnType, argTypes, args, opts);
     };
+
+  /** @param {boolean=} dontAddNull */
+  var writeAsciiToMemory = (str, buffer, dontAddNull) => {
+      for (var i = 0; i < str.length; ++i) {
+        assert(str.charCodeAt(i) === (str.charCodeAt(i) & 0xff));
+        HEAP8[buffer++] = str.charCodeAt(i);
+      }
+      // Null-terminate the string
+      if (!dontAddNull) HEAP8[buffer] = 0;
+    };
 // End JS library code
 
 // include: postlibrary.js
@@ -1334,6 +1344,7 @@ Module['FS_createPreloadedFile'] = FS.createPreloadedFile;
 // Begin runtime exports
   Module['ccall'] = ccall;
   Module['cwrap'] = cwrap;
+  Module['writeAsciiToMemory'] = writeAsciiToMemory;
   var missingLibrarySymbols = [
   'writeI53ToI64',
   'writeI53ToI64Clamped',
@@ -1501,7 +1512,6 @@ Module['FS_createPreloadedFile'] = FS.createPreloadedFile;
   'ALLOC_STACK',
   'allocate',
   'writeStringToMemory',
-  'writeAsciiToMemory',
   'allocateUTF8',
   'allocateUTF8OnStack',
   'demangle',
@@ -1748,7 +1758,7 @@ function checkIncomingModuleAPI() {
 }
 
 // Imports from the Wasm binary.
-var _analizar_exe = Module['_analizar_exe'] = makeInvalidEarlyAccess('_analizar_exe');
+var _analizar_recurso = Module['_analizar_recurso'] = makeInvalidEarlyAccess('_analizar_recurso');
 var _fflush = makeInvalidEarlyAccess('_fflush');
 var _strerror = makeInvalidEarlyAccess('_strerror');
 var _emscripten_stack_get_end = makeInvalidEarlyAccess('_emscripten_stack_get_end');
@@ -1765,7 +1775,7 @@ var __indirect_function_table = makeInvalidEarlyAccess('__indirect_function_tabl
 var wasmMemory = makeInvalidEarlyAccess('wasmMemory');
 
 function assignWasmExports(wasmExports) {
-  assert(typeof wasmExports['analizar_exe'] != 'undefined', 'missing Wasm export: analizar_exe');
+  assert(typeof wasmExports['analizar_recurso'] != 'undefined', 'missing Wasm export: analizar_recurso');
   assert(typeof wasmExports['fflush'] != 'undefined', 'missing Wasm export: fflush');
   assert(typeof wasmExports['strerror'] != 'undefined', 'missing Wasm export: strerror');
   assert(typeof wasmExports['emscripten_stack_get_end'] != 'undefined', 'missing Wasm export: emscripten_stack_get_end');
@@ -1779,7 +1789,7 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['emscripten_stack_get_current'] != 'undefined', 'missing Wasm export: emscripten_stack_get_current');
   assert(typeof wasmExports['memory'] != 'undefined', 'missing Wasm export: memory');
   assert(typeof wasmExports['__indirect_function_table'] != 'undefined', 'missing Wasm export: __indirect_function_table');
-  _analizar_exe = Module['_analizar_exe'] = createExportWrapper('analizar_exe', 2);
+  _analizar_recurso = Module['_analizar_recurso'] = createExportWrapper('analizar_recurso', 3);
   _fflush = createExportWrapper('fflush', 1);
   _strerror = createExportWrapper('strerror', 1);
   _emscripten_stack_get_end = wasmExports['emscripten_stack_get_end'];
