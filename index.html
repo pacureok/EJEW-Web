@@ -3,57 +3,113 @@ cat << 'EOF' > ~/EJEW_Project/public/index.html
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EJEW Engine - Windows 98 Edition</title>
+    <title>EJEW Engine Control Center</title>
     <style>
-        body { margin: 0; background: #008080 url('assets/clouds.jpg') no-repeat center; background-size: cover; font-family: 'Tahoma', sans-serif; overflow: hidden; }
-        #canvas { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); border: 3px solid #dfdfdf; border-right-color: #000; border-bottom-color: #000; display: none; background: black; }
-        #loading-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #c0c0c0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
-        .win-progress { width: 300px; height: 20px; border: 2px solid #808080; background: white; margin-top: 20px; }
-        #bar { width: 0%; height: 100%; background: #000080; }
+        :root {
+            --win-grey: #c0c0c0;
+            --win-blue: #000080;
+            --win-border-light: #ffffff;
+            --win-border-dark: #808080;
+        }
+
+        body {
+            background-color: #008080;
+            background-image: url('clouds.jpg'); /* Ahora está en la raíz */
+            background-size: cover;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Tahoma', sans-serif;
+        }
+
+        .window {
+            width: 850px;
+            background: var(--win-grey);
+            border: 2px solid;
+            border-color: var(--win-border-light) var(--win-border-dark) var(--win-border-dark) var(--win-border-light);
+            padding: 3px;
+            box-shadow: 4px 4px 10px rgba(0,0,0,0.3);
+        }
+
+        .title-bar {
+            background: linear-gradient(90deg, var(--win-blue), #1084d0);
+            padding: 3px 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: white;
+            font-weight: bold;
+            font-size: 13px;
+        }
+
+        .title-bar-text {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .viewport {
+            background: #000;
+            border: 2px solid;
+            border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+            margin-top: 2px;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 480px;
+            image-rendering: pixelated;
+        }
+
+        .status-bar {
+            border-top: 1px solid var(--win-border-dark);
+            margin-top: 2px;
+            padding: 2px 5px;
+            font-size: 11px;
+            display: flex;
+            gap: 10px;
+        }
     </style>
 </head>
 <body>
 
-<div id="loading-screen">
-    <img src="assets/windows-0.png" width="150" style="image-rendering: pixelated;">
-    <p>Iniciando EJEW Engine...</p>
-    <div class="win-progress"><div id="bar"></div></div>
+<div class="window">
+    <div class="title-bar">
+        <div class="title-bar-text">
+            <img src="windows-0.png" width="16" height="16"> EJEW_System_Debugger.exe
+        </div>
+        <div style="font-size: 10px;">[ ? ] [ X ]</div>
+    </div>
+    
+    <div class="viewport">
+        <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+    </div>
+
+    <div class="status-bar">
+        <div style="border: 1px inset; padding: 0 5px; flex-grow: 1;">Ready</div>
+        <div style="border: 1px inset; padding: 0 5px; width: 80px;">WASM: OK</div>
+    </div>
 </div>
 
-<canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
-
-<script type='text/javascript'>
+<script>
     var Module = {
-        preRun: [],
-        postRun: [],
-        print: function(text) { console.log(text); },
         canvas: document.getElementById('canvas'),
-        setStatus: function(text) {
-            if (!text) {
-                document.getElementById('loading-screen').style.display = 'none';
-                document.getElementById('canvas').style.display = 'block';
-            }
-        },
-        monitorRunDependencies: function(left) {
-            var total = 100;
-            var percent = Math.min(100, ((total - left) / total) * 100);
-            document.getElementById('bar').style.width = percent + '%';
+        setStatus: function(text) { console.log("EJEW Status: " + text); },
+        instantiateWasm: function(imports, successCallback) {
+            // Carga manual para máxima compatibilidad con COEP en Netlify
+            fetch('ejew_wasm.wasm')
+                .then(response => response.arrayBuffer())
+                .then(binary => WebAssembly.instantiate(binary, imports))
+                .then(result => successCallback(result.instance))
+                .catch(err => console.error("Fallo al cargar motor:", err));
+            return {};
         }
     };
-
-    // SOLUCIÓN AL ERROR DE STACK_INIT:
-    // Cargamos el binario primero y luego arrancamos el script
-    fetch('ejew_wasm.wasm')
-        .then(response => response.arrayBuffer())
-        .then(buffer => {
-            Module.wasmBinary = buffer; // Inyectamos el binario directamente
-            var script = document.createElement('script');
-            script.src = "ejew_wasm.js";
-            document.body.appendChild(script);
-        })
-        .catch(err => console.error("Error crítico de carga:", err));
 </script>
+<script async src="ejew_wasm.js"></script>
 
 </body>
 </html>
